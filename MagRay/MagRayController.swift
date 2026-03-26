@@ -33,6 +33,16 @@ final class MagRayController: NSObject {
     private let candidateMaterial = SimpleMaterial(color: .systemRed, isMetallic: false)
     private let selectedMaterial = SimpleMaterial(color: .systemGreen, isMetallic: false)
     private let targetMaterial = SimpleMaterial(color: .systemYellow, isMetallic: false)
+    
+    private var rayAnchor: AnchorEntity?
+    private var rayEntity: ModelEntity?
+
+    private let rayLength: Float = 0.9
+    private let rayRadius: Float = 0.002
+
+    private let baselineRayMaterial = UnlitMaterial(color: .white)
+    private let magrayRayMaterial = UnlitMaterial(color: .cyan)
+    private let confirmedRayMaterial = UnlitMaterial(color: .green)
 
     func setup(arView: ARView) {
         self.arView = arView
@@ -40,10 +50,12 @@ final class MagRayController: NSObject {
         addTapGesture()
         startMotionUpdates()
         subscribeToFrameUpdates()
+        
 
         // Give ARKit a moment to produce a valid frame.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.buildScene()
+            self?.buildVisibleRay()
         }
     }
 
@@ -58,6 +70,9 @@ final class MagRayController: NSObject {
         currentCandidate = nil
         confirmedSelection = nil
         intendedTarget = nil
+        rayAnchor?.removeFromParent()
+        rayAnchor = nil
+        rayEntity = nil
     }
 }
 
@@ -154,6 +169,51 @@ extension MagRayController {
 
         arView.scene.addAnchor(anchor)
         refreshMaterials()
+    }
+    private func buildVisibleRay() {
+        guard let arView else { return }
+
+        rayAnchor?.removeFromParent()
+
+        let anchor = AnchorEntity(.camera)
+
+        let rayMesh = MeshResource.generateCylinder(
+            height: rayLength,
+            radius: rayRadius
+        )
+
+        let ray = ModelEntity(mesh: rayMesh, materials: [baselineRayMaterial])
+
+        // Cylinder default axis is vertical, so rotate it to point forward.
+        ray.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+
+        // Put it slightly below the reticle so you can actually see it,
+        // and start it a bit in front of the camera so it is not clipped.
+        ray.position = SIMD3<Float>(0, -0.006, -0.03 - rayLength / 2)
+
+        anchor.addChild(ray)
+        arView.scene.addAnchor(anchor)
+
+        rayAnchor = anchor
+        rayEntity = ray
+
+        print("buildVisibleRay: added ray")
+        refreshRayAppearance()
+    }
+    
+    private func refreshRayAppearance() {
+        guard let rayEntity else { return }
+
+        if confirmedSelection != nil {
+            rayEntity.model?.materials = [confirmedRayMaterial]
+        } else {
+            switch selectionMode {
+            case .baseline:
+                rayEntity.model?.materials = [baselineRayMaterial]
+            case .magray:
+                rayEntity.model?.materials = [magrayRayMaterial]
+            }
+        }
     }
 }
 
@@ -279,15 +339,21 @@ extension MagRayController {
     private func refreshMaterials() {
         for target in targets {
             if target === confirmedSelection {
-                target.model?.materials = [selectedMaterial]   // green
+                target.model?.materials = [selectedMaterial]
+                target.scale = SIMD3<Float>(repeating: 1.15)
             } else if target === currentCandidate {
-                target.model?.materials = [candidateMaterial]  // red
+                target.model?.materials = [candidateMaterial]
+                target.scale = SIMD3<Float>(repeating: 1.12)
             } else if target === intendedTarget {
-                target.model?.materials = [targetMaterial]     // yellow
+                target.model?.materials = [targetMaterial]
+                target.scale = SIMD3<Float>(repeating: 1.0)
             } else {
-                target.model?.materials = [normalMaterial]     // blue
+                target.model?.materials = [normalMaterial]
+                target.scale = SIMD3<Float>(repeating: 1.0)
             }
         }
+
+        refreshRayAppearance()
     }
 }
 
