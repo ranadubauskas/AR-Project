@@ -38,14 +38,19 @@ final class MagRayController: NSObject {
     private let selectedMaterial = SimpleMaterial(color: .systemGreen, isMetallic: false)
     private let targetMaterial = SimpleMaterial(color: .systemYellow, isMetallic: false)
 
+    // Confirmation locking
+    private var confirmationPress: UILongPressGestureRecognizer?
+    private var isConfirmationLocked = false
+    private var lockedCandidate: ModelEntity?
+    private var lockStartTime: CFTimeInterval?
+
     func setup(arView: ARView) {
         self.arView = arView
         setupSession()
-        addTapGesture()
+        addConfirmationGesture()
         startMotionUpdates()
         subscribeToFrameUpdates()
 
-        // Give ARKit a moment to produce a valid frame.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.buildScene()
         }
@@ -64,6 +69,9 @@ final class MagRayController: NSObject {
         intendedTarget = nil
         currentCandidateSwitchCount = 0
         lastSceneNonce = nil
+
+        confirmationPress = nil
+        clearConfirmationLock()
     }
 
     func syncExperimentState() {
@@ -72,6 +80,7 @@ final class MagRayController: NSObject {
         if lastSceneNonce != experiment.sceneNonce {
             lastSceneNonce = experiment.sceneNonce
             currentCandidateSwitchCount = 0
+            clearConfirmationLock()
 
             if experiment.phase == .runningTrial {
                 selectionMode = experiment.activeTrial?.mode ?? selectionMode
@@ -236,7 +245,6 @@ extension MagRayController {
         let high: Double = 0.70
         let normalized = max(0.0, min(1.0, (smoothedMotion - low) / (high - low)))
 
-        // Still => stronger snap, moving fast => weaker snap
         currentSnapStrength = Float(1.0 - 0.75 * normalized)
     }
 }
@@ -257,6 +265,11 @@ extension MagRayController {
         let now = CACurrentMediaTime()
         guard now - lastUpdateTime >= updateInterval else { return }
         lastUpdateTime = now
+
+        // Freeze candidate switching during confirmation lock.
+        if isConfirmationLocked {
+            return
+        }
 
         let screenPoint = CGPoint(x: arView.bounds.midX, y: arView.bounds.midY)
 
@@ -350,33 +363,73 @@ extension MagRayController {
     }
 }
 
-// MARK: - Tap confirmation
+// MARK: - Confirmation locking
 extension MagRayController {
-    private func addTapGesture() {
+    private func addConfirmationGesture() {
         guard let arView else { return }
 
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
-        arView.addGestureRecognizer(tap)
+        let press = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleConfirmationPress(_:))
+        )
+        press.minimumPressDuration = 0.0
+        press.allowableMovement = 20
+        press.cancelsTouchesInView = false
+
+        arView.addGestureRecognizer(press)
+        confirmationPress = press
     }
 
-    @objc private func handleTap() {
-        let chosen: ModelEntity?
-
+    private func candidateForConfirmationLock() -> ModelEntity? {
         switch selectionMode {
         case .baseline:
-            chosen = currentCandidate
+            return currentCandidate
         case .magray:
-            chosen = history.mostStableCandidate(now: CACurrentMediaTime()) ?? currentCandidate
+            return history.mostStableCandidate(now: CACurrentMediaTime()) ?? currentCandidate
         }
+    }
 
-        guard let chosen else {
-            print("No candidate selected in mode \(selectionMode.rawValue)")
-            return
+    @objc private func handleConfirmationPress(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            lockedCandidate = candidateForConfirmationLock()
+            isConfirmationLocked = (lockedCandidate != nil)
+            lockStartTime = CACurrentMediaTime()
+
+            if let lockedCandidate {
+                currentCandidate = lockedCandidate
+                refreshMaterials()
+                print("Locked candidate: \(lockedCandidate.name)")
+            } else {
+                print("No candidate to lock")
+            }
+
+        case .ended:
+            guard isConfirmationLocked, let chosen = lockedCandidate else {
+                clearConfirmationLock()
+                return
+            }
+
+            finalizeSelection(chosen)
+            clearConfirmationLock()
+
+        case .cancelled, .failed:
+            clearConfirmationLock()
+
+        default:
+            break
         }
+    }
 
+    private func clearConfirmationLock() {
+        isConfirmationLocked = false
+        lockedCandidate = nil
+        lockStartTime = nil
+    }
+
+    private func finalizeSelection(_ chosen: ModelEntity) {
         let correct = (chosen === intendedTarget)
 
-        // Outside experiment trials, keep your existing toggle behavior.
         if experiment?.phase != .runningTrial {
             if chosen === confirmedSelection {
                 confirmedSelection = nil
@@ -391,8 +444,6 @@ extension MagRayController {
             return
         }
 
-        // During experiment trials:
-        // only confirm + advance when the selection is correct.
         if !correct {
             print("Incorrect selection: \(chosen.name). Keep trying.")
             return
@@ -411,7 +462,6 @@ extension MagRayController {
             )
         }
 
-        // Automatically move to the next trial after a short pause.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, let experiment = self.experiment else { return }
             guard experiment.phase != .finished else { return }
