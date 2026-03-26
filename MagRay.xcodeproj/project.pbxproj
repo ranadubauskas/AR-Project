@@ -256,6 +256,9 @@
 				DEVELOPMENT_TEAM = YHCM7W7DC3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "MagRay uses the camera for augmented reality target selection.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "MagRay uses motion data to adjust selection assistance based on device movement.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -288,6 +291,9 @@
 				DEVELOPMENT_TEAM = YHCM7W7DC3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
+				INFOPLIST_KEY_NSCameraUsageDescription = "MagRay uses the camera for augmented reality target selection.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "MagRay uses motion data to adjust selection assistance based on device movement.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
