@@ -4,10 +4,12 @@ import ARKit
 
 struct ARViewContainer: UIViewRepresentable {
     @Binding var selectionMode: SelectionMode
+    @ObservedObject var experiment: ExperimentManager
 
     func makeCoordinator() -> MagRayController {
         let controller = MagRayController()
         controller.selectionMode = selectionMode
+        controller.experiment = experiment
         return controller
     }
 
@@ -18,7 +20,9 @@ struct ARViewContainer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
-        context.coordinator.selectionMode = selectionMode
+        context.coordinator.selectionMode = experiment.activeTrial?.mode ?? selectionMode
+        context.coordinator.experiment = experiment
+        context.coordinator.syncExperimentState()
     }
 
     static func dismantleUIView(_ uiView: ARView, coordinator: MagRayController) {

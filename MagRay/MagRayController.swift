@@ -22,6 +22,10 @@ final class MagRayController: NSObject {
     private var intendedTarget: ModelEntity?
 
     var selectionMode: SelectionMode = .magray
+    var experiment: ExperimentManager?
+
+    private var lastSceneNonce: UUID?
+    private var currentCandidateSwitchCount: Int = 0
 
     private var currentSnapStrength: Float = 1.0
     private var smoothedMotion: Double = 0.0
@@ -33,16 +37,6 @@ final class MagRayController: NSObject {
     private let candidateMaterial = SimpleMaterial(color: .systemRed, isMetallic: false)
     private let selectedMaterial = SimpleMaterial(color: .systemGreen, isMetallic: false)
     private let targetMaterial = SimpleMaterial(color: .systemYellow, isMetallic: false)
-    
-    private var rayAnchor: AnchorEntity?
-    private var rayEntity: ModelEntity?
-
-    private let rayLength: Float = 1.6
-    private let rayRadius: Float = 0.0008
-
-    private let baselineRayMaterial = UnlitMaterial(color: .white)
-    private let magrayRayMaterial = UnlitMaterial(color: .black)
-    private let confirmedRayMaterial = UnlitMaterial(color: .green)
 
     func setup(arView: ARView) {
         self.arView = arView
@@ -50,12 +44,10 @@ final class MagRayController: NSObject {
         addTapGesture()
         startMotionUpdates()
         subscribeToFrameUpdates()
-        
 
         // Give ARKit a moment to produce a valid frame.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.buildScene()
-            self?.buildVisibleRay()
         }
     }
 
@@ -70,9 +62,22 @@ final class MagRayController: NSObject {
         currentCandidate = nil
         confirmedSelection = nil
         intendedTarget = nil
-        rayAnchor?.removeFromParent()
-        rayAnchor = nil
-        rayEntity = nil
+        currentCandidateSwitchCount = 0
+        lastSceneNonce = nil
+    }
+
+    func syncExperimentState() {
+        guard let experiment else { return }
+
+        if lastSceneNonce != experiment.sceneNonce {
+            lastSceneNonce = experiment.sceneNonce
+            currentCandidateSwitchCount = 0
+
+            if experiment.phase == .runningTrial {
+                selectionMode = experiment.activeTrial?.mode ?? selectionMode
+                buildScene()
+            }
+        }
     }
 }
 
@@ -87,21 +92,22 @@ extension MagRayController {
         arView.automaticallyConfigureSession = false
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
-    
+
     private func buildScene() {
         guard let arView else {
             print("buildScene: arView is nil")
             return
         }
+
         guard let frame = arView.session.currentFrame else {
             print("No ARFrame yet — move the phone a little and try again.")
             return
         }
-        
+
         print("buildScene: placing spheres")
 
-        // Clear old scene state
         rootAnchor?.removeFromParent()
+        history.clear()
         targets.removeAll()
         currentCandidate = nil
         confirmedSelection = nil
@@ -133,36 +139,18 @@ extension MagRayController {
             cameraMatrix.columns.1.z
         )
 
-        // Put the cluster about 60 cm in front of the user, fixed in world space
         let clusterCenter = cameraPosition + forward * 0.6
 
         let anchor = AnchorEntity(world: clusterCenter)
         rootAnchor = anchor
 
-        let sphereMesh = MeshResource.generateSphere(radius: 0.03)
-
-        // No sphere at exact center
-        let offsets: [SIMD3<Float>] = [
-            SIMD3<Float>( 0.05,  0.00,  0.00),
-            SIMD3<Float>( 0.08,  0.02,  0.00),
-            SIMD3<Float>( 0.07, -0.03,  0.00),
-            SIMD3<Float>(-0.06,  0.03,  0.00), // intended target
-            SIMD3<Float>(-0.08, -0.02,  0.00),
-            SIMD3<Float>( 0.02,  0.07,  0.00),
-            SIMD3<Float>(-0.03, -0.07,  0.00),
-            
-            // Outer spheres farther from the center cluster
-            SIMD3<Float>( 0.16,  0.00,  0.00),
-            SIMD3<Float>(-0.16,  0.00,  0.00),
-            SIMD3<Float>( 0.00,  0.16,  0.00),
-            SIMD3<Float>( 0.00, -0.16,  0.00),
-            SIMD3<Float>( 0.13,  0.11,  0.00),
-            SIMD3<Float>(-0.13,  0.11,  0.00),
-            SIMD3<Float>( 0.13, -0.11,  0.00),
-            SIMD3<Float>(-0.13, -0.11,  0.00)
-        ]
+        let count = experiment?.activeTrial?.density.targetCount ?? 15
+        let offsets = generateOffsets(count: count)
 
         for (i, offset) in offsets.enumerated() {
+            let radius: Float = i < min(10, count) ? 0.03 : 0.022
+            let sphereMesh = MeshResource.generateSphere(radius: radius)
+
             let entity = ModelEntity(mesh: sphereMesh, materials: [normalMaterial])
             entity.name = "target_\(i)"
 
@@ -175,53 +163,50 @@ extension MagRayController {
             targets.append(entity)
         }
 
-        intendedTarget = targets[3]
+        intendedTarget = targets.randomElement()
 
         arView.scene.addAnchor(anchor)
         refreshMaterials()
     }
-    private func buildVisibleRay() {
-        guard let arView else { return }
 
-        rayAnchor?.removeFromParent()
+    private func generateOffsets(count: Int) -> [SIMD3<Float>] {
+        var offsets: [SIMD3<Float>] = []
+        var attempts = 0
 
-        let anchor = AnchorEntity(.camera)
+        let radius: Float
+        let minSpacing: Float
 
-        let rayMesh = MeshResource.generateCylinder(
-            height: rayLength,
-            radius: rayRadius
-        )
+        switch count {
+        case 0...12:
+            radius = 0.14
+            minSpacing = 0.05
+        case 13...35:
+            radius = 0.22
+            minSpacing = 0.04
+        default:
+            radius = 0.30
+            minSpacing = 0.032
+        }
 
-        let ray = ModelEntity(mesh: rayMesh, materials: [baselineRayMaterial])
+        while offsets.count < count && attempts < count * 120 {
+            attempts += 1
 
-        ray.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
+            let candidate = SIMD3<Float>(
+                Float.random(in: -radius...radius),
+                Float.random(in: -radius...radius),
+                Float.random(in: -0.03...0.03)
+            )
 
-        // Start the ray much closer to the camera so it appears longer on screen.
-        ray.position = SIMD3<Float>(0, -0.003, -0.025 - rayLength / 2)
+            let tooClose = offsets.contains { existing in
+                simd_length(candidate - existing) < minSpacing
+            }
 
-        anchor.addChild(ray)
-        arView.scene.addAnchor(anchor)
-
-        rayAnchor = anchor
-        rayEntity = ray
-
-        print("buildVisibleRay: added ray")
-        refreshRayAppearance()
-    }
-    
-    private func refreshRayAppearance() {
-        guard let rayEntity else { return }
-
-        if confirmedSelection != nil {
-            rayEntity.model?.materials = [confirmedRayMaterial]
-        } else {
-            switch selectionMode {
-            case .baseline:
-                rayEntity.model?.materials = [baselineRayMaterial]
-            case .magray:
-                rayEntity.model?.materials = [magrayRayMaterial]
+            if !tooClose {
+                offsets.append(candidate)
             }
         }
+
+        return offsets
     }
 }
 
@@ -308,7 +293,6 @@ extension MagRayController {
 
             switch selectionMode {
             case .baseline:
-                // Strict: only almost exact aim counts.
                 if rayDistance > 0.02 { continue }
 
                 let score = -rayDistance
@@ -318,7 +302,6 @@ extension MagRayController {
                 }
 
             case .magray:
-                // Forgiving: nearby targets can snap to the ray.
                 if rayDistance > 0.16 { continue }
 
                 let proximityScore = 1.0 / (rayDistance + 0.01)
@@ -340,6 +323,10 @@ extension MagRayController {
     }
 
     private func setCurrentCandidate(_ entity: ModelEntity?) {
+        if experiment?.phase == .runningTrial, currentCandidate !== entity {
+            currentCandidateSwitchCount += 1
+        }
+
         currentCandidate = entity
         refreshMaterials()
     }
@@ -360,8 +347,6 @@ extension MagRayController {
                 target.scale = SIMD3<Float>(repeating: 1.0)
             }
         }
-
-        refreshRayAppearance()
     }
 }
 
@@ -389,18 +374,48 @@ extension MagRayController {
             return
         }
 
-        // If you tap the already-confirmed target again, unselect it.
-        if chosen === confirmedSelection {
-            confirmedSelection = nil
+        let correct = (chosen === intendedTarget)
+
+        // Outside experiment trials, keep your existing toggle behavior.
+        if experiment?.phase != .runningTrial {
+            if chosen === confirmedSelection {
+                confirmedSelection = nil
+                refreshMaterials()
+                print("Unselected: \(chosen.name)")
+                return
+            }
+
+            confirmedSelection = chosen
             refreshMaterials()
-            print("Unselected: \(chosen.name)")
+            print("Selected: \(chosen.name) in mode \(selectionMode.rawValue) | correct: \(correct)")
+            return
+        }
+
+        // During experiment trials:
+        // only confirm + advance when the selection is correct.
+        if !correct {
+            print("Incorrect selection: \(chosen.name). Keep trying.")
             return
         }
 
         confirmedSelection = chosen
         refreshMaterials()
 
-        let correct = (chosen === intendedTarget)
         print("Selected: \(chosen.name) in mode \(selectionMode.rawValue) | correct: \(correct)")
+
+        if let targetID = intendedTarget?.name {
+            experiment?.recordSelection(
+                selectedID: chosen.name,
+                targetID: targetID,
+                candidateSwitchCount: currentCandidateSwitchCount
+            )
+        }
+
+        // Automatically move to the next trial after a short pause.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, let experiment = self.experiment else { return }
+            guard experiment.phase != .finished else { return }
+            experiment.startNextTrial()
+        }
     }
 }
