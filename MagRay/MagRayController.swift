@@ -37,11 +37,11 @@ final class MagRayController: NSObject {
     private var rayAnchor: AnchorEntity?
     private var rayEntity: ModelEntity?
 
-    private let rayLength: Float = 0.9
-    private let rayRadius: Float = 0.002
+    private let rayLength: Float = 1.6
+    private let rayRadius: Float = 0.0008
 
     private let baselineRayMaterial = UnlitMaterial(color: .white)
-    private let magrayRayMaterial = UnlitMaterial(color: .cyan)
+    private let magrayRayMaterial = UnlitMaterial(color: .black)
     private let confirmedRayMaterial = UnlitMaterial(color: .green)
 
     func setup(arView: ARView) {
@@ -149,7 +149,17 @@ extension MagRayController {
             SIMD3<Float>(-0.06,  0.03,  0.00), // intended target
             SIMD3<Float>(-0.08, -0.02,  0.00),
             SIMD3<Float>( 0.02,  0.07,  0.00),
-            SIMD3<Float>(-0.03, -0.07,  0.00)
+            SIMD3<Float>(-0.03, -0.07,  0.00),
+            
+            // Outer spheres farther from the center cluster
+            SIMD3<Float>( 0.16,  0.00,  0.00),
+            SIMD3<Float>(-0.16,  0.00,  0.00),
+            SIMD3<Float>( 0.00,  0.16,  0.00),
+            SIMD3<Float>( 0.00, -0.16,  0.00),
+            SIMD3<Float>( 0.13,  0.11,  0.00),
+            SIMD3<Float>(-0.13,  0.11,  0.00),
+            SIMD3<Float>( 0.13, -0.11,  0.00),
+            SIMD3<Float>(-0.13, -0.11,  0.00)
         ]
 
         for (i, offset) in offsets.enumerated() {
@@ -184,12 +194,10 @@ extension MagRayController {
 
         let ray = ModelEntity(mesh: rayMesh, materials: [baselineRayMaterial])
 
-        // Cylinder default axis is vertical, so rotate it to point forward.
         ray.orientation = simd_quatf(angle: .pi / 2, axis: SIMD3<Float>(1, 0, 0))
 
-        // Put it slightly below the reticle so you can actually see it,
-        // and start it a bit in front of the camera so it is not clipped.
-        ray.position = SIMD3<Float>(0, -0.006, -0.03 - rayLength / 2)
+        // Start the ray much closer to the camera so it appears longer on screen.
+        ray.position = SIMD3<Float>(0, -0.003, -0.025 - rayLength / 2)
 
         anchor.addChild(ray)
         arView.scene.addAnchor(anchor)
@@ -378,6 +386,14 @@ extension MagRayController {
 
         guard let chosen else {
             print("No candidate selected in mode \(selectionMode.rawValue)")
+            return
+        }
+
+        // If you tap the already-confirmed target again, unselect it.
+        if chosen === confirmedSelection {
+            confirmedSelection = nil
+            refreshMaterials()
+            print("Unselected: \(chosen.name)")
             return
         }
 
