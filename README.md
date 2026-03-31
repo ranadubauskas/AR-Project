@@ -245,6 +245,8 @@ If the full MagRay system proves too complex we will try one of the following si
 
 ## Minimum Viable Design (MVD)
 
+[Demo Video Link](https://vimeo.com/1178952293?share=copy&fl=sv&fe=ci)
+
 The MVD for MagRay demonstrates that the core technical challenge of the project is feasible: an intent-aware target selection pipeline for dense mobile AR scenes running end-to-end on an iPhone. It validates that selecting a likely target in clutter using a custom ray-based scoring pipeline works in a simplified but functional form
 
 ### What is Currently Implemented
