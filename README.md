@@ -242,3 +242,67 @@ If the full MagRay system proves too complex we will try one of the following si
 1. Implement magnetic proximity scoring only (no motion scaling).
 2. Implement temporal confirmation locking only to stabilize selections.
 3. Evaluate ray proximity snapping vs baseline ray casting without motion-based adaptation.
+
+## Minimum Viable Design (MVD)
+
+The MVD for MagRay demonstrates that the core technical challenge of the project is feasible: an intent-aware target selection pipeline for dense mobile AR scenes running end-to-end on an iPhone. It validates that selecting a likely target in clutter using a custom ray-based scoring pipeline works in a simplified but functional form
+
+### What is Currently Implemented
+
+The current MVD includes a working mobile AR prototype built with **Swift, SwiftUI, ARKit, RealityKit, and Core Motion** on iPhone. The prototype supports:
+- A live **ARKit world-tracked scene**
+- A generated cluster of selectable **RealityKit sphere targets**
+- A **screen-center selection ray** using `arView.ray(through:)`
+- A **custom candidate evaluation pipeline** based on ray-to-target distance rather than RealityKit’s default hit testing
+- **Baseline vs MagRay** comparison modes
+- **Motion-aware magnetic assistance**, where snap strength changes based on device motion
+- **Temporal confirmation stabilization / confirmation locking** to reduce errors caused by the confirmation gesture
+- An **experiment mode** with randomized target selection, density conditions, and logging of trial metrics such as accuracy, selection time, and candidate-switch count
+
+### What the MVD Demonstrates
+
+The current prototype shows that MagRay can:
+1. Generate a world-space ray from the center of the phone screen
+2. Evaluate multiple nearby targets in a cluttered AR scene
+3. Select a current best candidate using a custom magnetic scoring function
+4. Adapt assistance strength using device motion
+5. Stabilize final selection during confirmation
+
+This is the core technical challenge of the system. The most important feasibility question for the project was whether it would be possible to replace simple ray intersection with a richer, intent-aware selection mechanism that still runs live on a mobile device. The MVD shows that this is feasible.
+
+### What Remains to be Implemented or Improved
+
+The main work remaining after the MVD is not the basic feasibility of MagRay, but refinement and evaluation. Remaining tasks include:
+- Improving the visual presentation of the selection technique
+- Tuning magnetic snap strength and temporal locking parameters
+- Reducing candidate flicker in dense scenes
+- Improving experiment usability and trial flow
+- Collecting and analyzing evaluation data across all study conditions
+- Replacing synthetic spheres with more realistic target objects if time permits
+
+### Technical Issues Encountered
+Several issues emerged during implementation:
+
+- Ray on screen was blocking visibility of scene --> had to make thinner
+- Candidate flickering between nearby targets in dense scenes
+- Balancing snap strength so that MagRay assists the user without feeling overly “sticky,”
+### Technical Issues Encountered
+- AR performance and world-tracking stability under heavier scene (`ARWorldTrackingTechnique ... World tracking performance is being affected by resource constraints [33 ]`)
+- Designing a visualization that communicates “magnetic” behavior clearly without misleading the user
+
+### Scope Changes
+
+The original proposal framed MagRay partly as a “magnetic ray” that bends toward likely targets. During development, the project evolved toward a more concrete and technically robust interpretation: a straight screen-center ray combined with intent-aware target scoring, motion scaling, and confirmation stabilization. This is still consistent with the project’s novelty claims, but it shifts the emphasis from visual ray deformation to the underlying selection pipeline itself. The novelty claim is therefore now more accurately centered on the unified intent-aware selection system rather than on a literal geometric ray-bending visualization.
+
+
+### Contingency & Risk Assessment
+
+The highest remaining technical risk is no longer whether MagRay can be implemented, but whether the final system will show a strong enough improvement over baseline in dense scenes while still feeling natural to use. The main remaining risks are:
+- The possibility that magnetic assistance may help accuracy but slow down selection
+- The possibility that confirmation locking may feel overly sticky if not tuned carefully
+- The challenge of making the system’s benefit obvious in user evaluation
+
+If needed, the contingency path is to simplify the final system and evaluate the strongest subset of the technique, such as:
+1. Magnetic proximity scoring + baseline comparison only
+2. Temporal confirmation stabilization + baseline comparison only
+3. Magnetic scoring + temporal stabilization without motion-aware scaling
