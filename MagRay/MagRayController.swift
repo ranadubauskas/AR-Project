@@ -6,6 +6,19 @@ import CoreMotion
 import QuartzCore
 import Combine
 
+struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: Int) {
+        self.state = UInt64(bitPattern: Int64(seed == 0 ? 1 : seed))
+    }
+
+    mutating func next() -> UInt64 {
+        state = 2862933555777941757 &* state &+ 3037000493
+        return state
+    }
+}
+
 @MainActor
 final class MagRayController: NSObject {
     private weak var arView: ARView?
@@ -101,7 +114,7 @@ extension MagRayController {
         arView.automaticallyConfigureSession = false
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
-
+    
     private func buildScene() {
         guard let arView else {
             print("buildScene: arView is nil")
@@ -130,31 +143,51 @@ extension MagRayController {
             cameraMatrix.columns.3.z
         )
 
-        let forward = -SIMD3<Float>(
+        let cameraForward = -SIMD3<Float>(
             cameraMatrix.columns.2.x,
             cameraMatrix.columns.2.y,
             cameraMatrix.columns.2.z
         )
 
-        let right = SIMD3<Float>(
+        let cameraRight = SIMD3<Float>(
             cameraMatrix.columns.0.x,
             cameraMatrix.columns.0.y,
             cameraMatrix.columns.0.z
         )
 
-        let up = SIMD3<Float>(
+        let cameraUp = SIMD3<Float>(
             cameraMatrix.columns.1.x,
             cameraMatrix.columns.1.y,
             cameraMatrix.columns.1.z
         )
 
-        let clusterCenter = cameraPosition + forward * 0.6
+        // Use horizontal forward only for where the cluster center is spawned,
+        // so the next scene doesn't drift up toward the ceiling.
+        var horizontalForward = SIMD3<Float>(
+            cameraForward.x,
+            0,
+            cameraForward.z
+        )
+
+        if simd_length_squared(horizontalForward) < 1e-6 {
+            horizontalForward = SIMD3<Float>(0, 0, -1)
+        } else {
+            horizontalForward = simd_normalize(horizontalForward)
+        }
+
+        // Place cluster in front of the user, but not based on current phone pitch.
+        // Small downward offset helps keep the cluster centered on screen.
+        let clusterCenter =
+            cameraPosition +
+            horizontalForward * 0.6 +
+            SIMD3<Float>(0, -0.05, 0)
 
         let anchor = AnchorEntity(world: clusterCenter)
         rootAnchor = anchor
 
         let count = experiment?.activeTrial?.density.targetCount ?? 15
-        let offsets = generateOffsets(count: count)
+        let seed = experiment?.activeTrial?.layoutSeed ?? 42
+        let offsets = generateOffsets(count: count, seed: seed)
 
         for (i, offset) in offsets.enumerated() {
             let radius: Float = i < min(10, count) ? 0.03 : 0.022
@@ -163,48 +196,58 @@ extension MagRayController {
             let entity = ModelEntity(mesh: sphereMesh, materials: [normalMaterial])
             entity.name = "target_\(i)"
 
+            // Keep the layout screen-facing like before, so lots of spheres stay visible.
             entity.position =
-                right * offset.x +
-                up * offset.y +
-                forward * offset.z
+                cameraRight * offset.x +
+                cameraUp * offset.y +
+                horizontalForward * offset.z
 
             anchor.addChild(entity)
             targets.append(entity)
         }
 
-        intendedTarget = targets.randomElement()
+        if let trial = experiment?.activeTrial, trial.targetIndex < targets.count {
+            intendedTarget = targets[trial.targetIndex]
+        } else {
+            intendedTarget = targets.first
+        }
 
         arView.scene.addAnchor(anchor)
         refreshMaterials()
     }
 
-    private func generateOffsets(count: Int) -> [SIMD3<Float>] {
+    private func generateOffsets(count: Int, seed: Int) -> [SIMD3<Float>] {
         var offsets: [SIMD3<Float>] = []
         var attempts = 0
+        var rng = SeededGenerator(seed: seed)
 
         let radius: Float
         let minSpacing: Float
+        let zSpread: Float
 
         switch count {
-        case 0...12:
-            radius = 0.14
-            minSpacing = 0.05
-        case 13...35:
-            radius = 0.22
-            minSpacing = 0.04
+        case 0...20:
+            radius = 0.08
+            minSpacing = 0.018
+            zSpread = 0.01
+        case 21...50:
+            radius = 0.11
+            minSpacing = 0.014
+            zSpread = 0.012
         default:
-            radius = 0.30
-            minSpacing = 0.032
+            radius = 0.14
+            minSpacing = 0.010
+            zSpread = 0.015
         }
 
-        while offsets.count < count && attempts < count * 120 {
+        while offsets.count < count && attempts < count * 500 {
             attempts += 1
 
-            let candidate = SIMD3<Float>(
-                Float.random(in: -radius...radius),
-                Float.random(in: -radius...radius),
-                Float.random(in: -0.03...0.03)
-            )
+            let x = Float.random(in: -radius...radius, using: &rng)
+            let y = Float.random(in: -radius...radius, using: &rng)
+            let z = Float.random(in: -zSpread...zSpread, using: &rng)
+
+            let candidate = SIMD3<Float>(x, y, z)
 
             let tooClose = offsets.contains { existing in
                 simd_length(candidate - existing) < minSpacing
@@ -426,10 +469,11 @@ extension MagRayController {
         lockedCandidate = nil
         lockStartTime = nil
     }
-
+    
     private func finalizeSelection(_ chosen: ModelEntity) {
         let correct = (chosen === intendedTarget)
 
+        // Non-experiment behavior stays the same
         if experiment?.phase != .runningTrial {
             if chosen === confirmedSelection {
                 confirmedSelection = nil
@@ -444,11 +488,8 @@ extension MagRayController {
             return
         }
 
-        if !correct {
-            print("Incorrect selection: \(chosen.name). Keep trying.")
-            return
-        }
-
+        // During experiment trials:
+        // end the trial on the FIRST confirmed selection, whether right or wrong.
         confirmedSelection = chosen
         refreshMaterials()
 
@@ -462,7 +503,7 @@ extension MagRayController {
             )
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
             guard let self, let experiment = self.experiment else { return }
             guard experiment.phase != .finished else { return }
             experiment.startNextTrial()
