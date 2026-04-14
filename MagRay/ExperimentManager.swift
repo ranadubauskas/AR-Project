@@ -78,50 +78,102 @@ final class ExperimentManager: ObservableObject {
         guard phase == .runningTrial, let trialStartTime else { return nil }
         return (now - trialStartTime) * 1000.0
     }
+    
+    private func shuffledWithoutAdjacentMatchedLayouts(_ trials: [TrialSpec]) -> [TrialSpec] {
+        guard trials.count > 1 else { return trials }
 
-    func prepareDefaultQueue(trialsPerCondition: Int = 12) {
-        var queue: [TrialSpec] = []
+        func sameLayout(_ a: TrialSpec, _ b: TrialSpec) -> Bool {
+            a.density == b.density &&
+            a.layoutSeed == b.layoutSeed &&
+            a.targetIndex == b.targetIndex
+        }
 
-        // For each density, create fixed layouts and pair them across Baseline/MagRay.
-        for density in DensityLevel.allCases {
-            for n in 0..<trialsPerCondition {
-                let layoutSeed = density.stableCode * 10_000 + n
-                let targetIndex = abs(layoutSeed) % density.targetCount
+        // Retry shuffling until no identical layouts are adjacent.
+        for _ in 0..<500 {
+            let shuffled = trials.shuffled()
 
-                let baselineTrial = TrialSpec(
-                    mode: .baseline,
-                    density: density,
-                    trialNumberWithinCondition: n + 1,
-                    layoutSeed: layoutSeed,
-                    targetIndex: targetIndex
-                )
-
-                let magrayTrial = TrialSpec(
-                    mode: .magray,
-                    density: density,
-                    trialNumberWithinCondition: n + 1,
-                    layoutSeed: layoutSeed,
-                    targetIndex: targetIndex
-                )
-
-                // Keep matched pairs adjacent, but randomize which technique comes first.
-                if Bool.random() {
-                    queue.append(baselineTrial)
-                    queue.append(magrayTrial)
-                } else {
-                    queue.append(magrayTrial)
-                    queue.append(baselineTrial)
+            var ok = true
+            for i in 1..<shuffled.count {
+                if sameLayout(shuffled[i - 1], shuffled[i]) {
+                    ok = false
+                    break
                 }
+            }
+
+            if ok {
+                return shuffled
             }
         }
 
-        trialQueue = queue
-        currentTrialIndex = 0
-        results = []
-        self.activeTrial = nil
-        self.trialStartTime = nil
-        phase = .readyForTrial
-        currentTrialLabel = "Ready: 0/\(trialQueue.count)"
+        // Fallback: greedy construction
+        var remaining = trials.shuffled()
+        var arranged: [TrialSpec] = []
+
+        while !remaining.isEmpty {
+            let last = arranged.last
+
+            if let index = remaining.firstIndex(where: { candidate in
+                guard let last else { return true }
+                return !(candidate.density == last.density &&
+                         candidate.layoutSeed == last.layoutSeed &&
+                         candidate.targetIndex == last.targetIndex)
+            }) {
+                arranged.append(remaining.remove(at: index))
+            } else {
+                // If somehow unavoidable, just place the next one.
+                arranged.append(remaining.removeFirst())
+            }
+        }
+
+        return arranged
+    }
+
+    func prepareDefaultQueue() {
+        var queue: [TrialSpec] = []
+
+        let lowSeeds = [10001, 10002, 10003, 10004, 10005, 10006, 10007, 10016, 10009, 10010, 10023, 10012]
+        let mediumSeeds = [20001, 20022, 20003, 20004, 20005, 20006, 20007, 20008, 20009, 20010, 20031, 20032]
+        let highSeeds = [30001, 30002, 30003, 30014, 30005, 30006, 30007, 30008, 30019, 30010, 30011, 30022]
+
+        let seedTable: [(DensityLevel, [Int])] = [
+            (.low, lowSeeds),
+            (.medium, mediumSeeds),
+            (.high, highSeeds)
+        ]
+
+        for (density, seeds) in seedTable {
+                for (index, seed) in seeds.enumerated() {
+                    let targetIndex = abs(seed) % density.targetCount
+
+                    queue.append(
+                        TrialSpec(
+                            mode: .baseline,
+                            density: density,
+                            trialNumberWithinCondition: index + 1,
+                            layoutSeed: seed,
+                            targetIndex: targetIndex
+                        )
+                    )
+
+                    queue.append(
+                        TrialSpec(
+                            mode: .magray,
+                            density: density,
+                            trialNumberWithinCondition: index + 1,
+                            layoutSeed: seed,
+                            targetIndex: targetIndex
+                        )
+                    )
+                }
+            }
+
+            trialQueue = shuffledWithoutAdjacentMatchedLayouts(queue)
+            currentTrialIndex = 0
+            results = []
+            activeTrial = nil
+            trialStartTime = nil
+            phase = .readyForTrial
+            currentTrialLabel = "Ready: 0/\(trialQueue.count)"
     }
 
     func startNextTrial() {
@@ -182,7 +234,6 @@ final class ExperimentManager: ObservableObject {
           correct = \(result.correct)
           selectionTimeMs = \(String(format: "%.1f", result.selectionTimeMs))
           candidateSwitchCount = \(result.candidateSwitchCount)
-        
         """)
 
         currentTrialIndex += 1

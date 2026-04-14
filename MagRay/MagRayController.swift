@@ -115,6 +115,8 @@ extension MagRayController {
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
     
+    
+    
     private func buildScene() {
         guard let arView else {
             print("buildScene: arView is nil")
@@ -179,7 +181,7 @@ extension MagRayController {
         // Small downward offset helps keep the cluster centered on screen.
         let clusterCenter =
             cameraPosition +
-            horizontalForward * 0.6 +
+            horizontalForward * 0.75 +
             SIMD3<Float>(0, -0.05, 0)
 
         let anchor = AnchorEntity(world: clusterCenter)
