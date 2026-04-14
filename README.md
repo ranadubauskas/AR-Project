@@ -296,7 +296,6 @@ Several issues emerged during implementation:
 
 The original proposal framed MagRay partly as a “magnetic ray” that bends toward likely targets. During development, the project evolved toward a more concrete and technically robust interpretation: a straight screen-center ray combined with intent-aware target scoring, motion scaling, and confirmation stabilization. This is still consistent with the project’s novelty claims, but it shifts the emphasis from visual ray deformation to the underlying selection pipeline itself. The novelty claim is therefore now more accurately centered on the unified intent-aware selection system rather than on a literal geometric ray-bending visualization.
 
-
 ### Contingency & Risk Assessment
 
 The highest remaining technical risk is no longer whether MagRay can be implemented, but whether the final system will show a strong enough improvement over baseline in dense scenes while still feeling natural to use. The main remaining risks are:
@@ -308,3 +307,158 @@ If needed, the contingency path is to simplify the final system and evaluate the
 1. Magnetic proximity scoring + baseline comparison only
 2. Temporal confirmation stabilization + baseline comparison only
 3. Magnetic scoring + temporal stabilization without motion-aware scaling
+
+## Final Report
+
+### Experimental Design
+*Raw experimental data can be found in experiment_results.json.*
+
+The evaluation used a repeated-measures AR target selection experiment comparing Baseline Ray Casting and MagRay. The study included 10 participants, all of whom were Vanderbilt University college students. Each participant completed a run of 72 randomized trials across three density conditions: Low, Medium, and High. In total, the dataset consisted of 720 trials, evenly split between Baseline and MagRay and evenly distributed across density conditions. Trial order was randomized to reduce immediate memory and carryover effects, while matched layoutSeed and targetIndex pairs ensured that the two techniques were evaluated on the same underlying scene layouts and target selections.
+
+### Results
+### Table 1. Dataset Overview
+
+| Measure | Value |
+|---|---:|
+| Experiments | 10 |
+| Trials total | 720 |
+| Trials per experiment | 72 |
+| Baseline trials total | 360 |
+| MagRay trials total | 360 |
+| Low trials total | 240 |
+| Medium trials total | 240 |
+| High trials total | 240 |
+
+#### Analysis
+- Balanced design: equal Baseline vs. MagRay trial counts and equal Low, Medium, and High density trial counts.
+- Large enough dataset to compare methods fairly across density conditions.
+
+---
+
+### Table 2. Performance by Mode
+
+| Metric | Baseline Ray Casting | MagRay | Absolute Improvement | Relative Change |
+|---|---:|---:|---:|---:|
+| Overall Selection Accuracy | 90.3% | 87.8% | -2.5% | 2.8% worse |
+| Overall Error Rate | 9.7% | 12.2% | +2.5% | 25.7% higher |
+| Average Selection Time (ms) | 1450.0 ms | 1387.1 ms | -62.9 ms | 4.3% faster |
+| Median Selection Time | 1330.2 ms | 1269.6 ms | -60.6 ms | 4.56% faster |
+| Average Ray Stability (Switches) | 7.74 | 7.33 | -0.41 | 5.2% more stable |
+
+#### Analysis
+- Baseline was more accurate overall; MagRay had a higher overall error rate.
+- MagRay was slightly faster and slightly more stable overall.
+- Implication: MagRay improves speed and smoothness, but not overall correctness yet.
+
+---
+
+### Table 3. Performance by Density & Mode
+
+| Density | Mode | Trials | Accuracy | Error Rate | Mean Time (ms) | Median Time (ms) | Mean Switches |
+|---|---|---:|---:|---:|---:|---:|---:|
+| High | Baseline | 120 | 86.7% | 13.3% | 1546.4 | 1413.0 | 9.12 |
+| High | MagRay | 120 | 81.7% | 18.3% | 1409.7 | 1303.9 | 8.57 |
+| Low | Baseline | 120 | 96.7% | 3.3% | 1373.3 | 1297.0 | 6.16 |
+| Low | MagRay | 120 | 91.7% | 8.3% | 1363.0 | 1244.9 | 5.92 |
+| Medium | Baseline | 120 | 87.5% | 12.5% | 1430.4 | 1334.6 | 7.92 |
+| Medium | MagRay | 120 | 90.0% | 10.0% | 1388.7 | 1292.8 | 7.50 |
+
+#### Analysis
+- Low density: Baseline was better; MagRay adds little benefit when the task is already easy.
+- Medium density: MagRay performed best, with better accuracy, speed, and stability.
+- High density: MagRay was faster, but accuracy dropped too much.
+
+---
+
+### Table 4. Density-Specific MagRay vs. Baseline
+
+| Density | Metric | Baseline | MagRay | Difference (MagRay - Baseline) | Interpretation |
+|---|---|---:|---:|---:|---|
+| High | Accuracy | 86.7% | 81.7% | -5.0 percentage points | MagRay was less accurate in high-density scenes |
+| High | Mean Selection Time | 1546.4 ms | 1409.7 ms | -136.7 ms | MagRay was faster in high-density scenes |
+| High | Mean Candidate Switches | 9.12 | 8.57 | -0.55 | MagRay was slightly more stable in high-density scenes |
+| Low | Accuracy | 96.7% | 91.7% | -5.0 percentage points | MagRay was less accurate in low-density scenes |
+| Low | Mean Selection Time | 1373.3 ms | 1363.0 ms | -10.3 ms | The speed difference was very small in low-density scenes |
+| Low | Mean Candidate Switches | 6.16 | 5.92 | -0.24 | MagRay was only slightly more stable in low-density scenes |
+| Medium | Accuracy | 87.5% | 90.0% | +2.5 percentage points | MagRay was more accurate in medium-density scenes |
+| Medium | Mean Selection Time | 1430.4 ms | 1388.7 ms | -41.7 ms | MagRay was faster in medium-density scenes |
+| Medium | Mean Candidate Switches | 7.92 | 7.50 | -0.42 | MagRay was slightly more stable in medium-density scenes |
+
+#### Analysis
+- MagRay was faster and a bit more stable at every density.
+- Accuracy only improved in Medium density; it got worse in Low and High.
+- Main implication: MagRay helps most in moderate clutter, not very easy or very hard scenes.
+
+---
+
+### Table 5. Per-Experiment Summary by Mode
+
+| Experiment | Mode | Trials | Accuracy | Mean Time (ms) | Median Time (ms) | Mean Switches |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | Baseline | 36 | 91.7 | 1467.2 | 1376.0 | 7.47 |
+| 1 | MagRay | 36 | 88.9 | 1529.8 | 1452.1 | 6.94 |
+| 2 | Baseline | 36 | 88.9 | 1590.8 | 1289.9 | 8.67 |
+| 2 | MagRay | 36 | 91.7 | 1265.5 | 1169.0 | 7.64 |
+| 3 | Baseline | 36 | 86.1 | 1504.7 | 1325.1 | 8.08 |
+| 3 | MagRay | 36 | 88.9 | 1351.8 | 1259.9 | 7.94 |
+| 4 | Baseline | 36 | 88.9 | 1397.7 | 1305.5 | 7.22 |
+| 4 | MagRay | 36 | 88.9 | 1466.7 | 1364.6 | 7.72 |
+| 5 | Baseline | 36 | 94.4 | 1385.1 | 1326.9 | 7.58 |
+| 5 | MagRay | 36 | 91.7 | 1687.5 | 1336.1 | 8.11 |
+| 6 | Baseline | 36 | 88.9 | 1596.8 | 1379.8 | 7.72 |
+| 6 | MagRay | 36 | 86.1 | 1275.1 | 1236.4 | 6.83 |
+| 7 | Baseline | 36 | 88.9 | 1459.1 | 1299.6 | 8.11 |
+| 7 | MagRay | 36 | 88.9 | 1386.1 | 1199.4 | 7.08 |
+| 8 | Baseline | 36 | 97.2 | 1452.5 | 1366.2 | 7.58 |
+| 8 | MagRay | 36 | 77.8 | 1409.5 | 1276.2 | 7.81 |
+| 9 | Baseline | 36 | 94.4 | 1331.3 | 1310.0 | 7.25 |
+| 9 | MagRay | 36 | 80.6 | 1296.0 | 1245.4 | 6.69 |
+| 10 | Baseline | 36 | 83.3 | 1314.8 | 1207.4 | 7.67 |
+| 10 | MagRay | 36 | 94.4 | 1203.5 | 1184.4 | 6.53 |
+
+#### Analysis
+- Results vary a lot across runs: some experiments favor MagRay, others favor Baseline.
+- MagRay’s speed and stability gains are more consistent than its accuracy gains.
+- This suggests layout-specific effects or fragile tuning are still influencing outcomes.
+
+---
+
+### Table 6. Comparison for Matched Layouts (Same Scene/Target)
+
+| Density | Matched Pairs | MagRay better accuracy | Baseline better accuracy | Accuracy tie | MagRay faster | Baseline faster | MagRay fewer switches | Baseline fewer switches |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| High | 120 | 11 | 17 | 92 | 66 | 54 | 55 | 45 |
+| Low | 120 | 3 | 9 | 108 | 73 | 47 | 53 | 47 |
+| Medium | 120 | 14 | 11 | 95 | 59 | 61 | 61 | 42 |
+
+#### Analysis
+- This is the fairest comparison because both methods see the same exact scene/target pair.
+- Medium density favors MagRay more often; High density favors Baseline more often.
+- Low density is mostly ties, meaning assistance is not very necessary there.
+
+---
+
+### Table 7. Failures by Density & Mode
+
+| Density | Mode | Failures | Error Rate | Mean Error Time (ms) |
+|---|---|---:|---:|---:|
+| High | Baseline | 16 | 13.3% | 1891.4 |
+| High | MagRay | 22 | 18.3% | 1475.1 |
+| Low | Baseline | 4 | 3.3% | 1438.3 |
+| Low | MagRay | 10 | 8.3% | 1216.5 |
+| Medium | Baseline | 15 | 12.5% | 1282.0 |
+| Medium | MagRay | 12 | 10.0% | 1336.8 |
+
+#### Analysis
+- MagRay had fewer failures only in Medium density.
+- In Low and High density, MagRay produced more errors than Baseline.
+- MagRay’s errors also tended to happen faster, suggesting quick wrong snaps rather than slow searching.
+
+---
+
+### Overall Analysis
+- Strongest result: MagRay looks most promising in Medium density.
+- Biggest weakness: High-density accuracy is still not reliable enough.
+- Best next step: fix bad layouts and retune High-density behavior while preserving the Medium-density benefit.
+
+
