@@ -311,7 +311,7 @@ If needed, the contingency path is to simplify the final system and evaluate the
 ## Final Report
 
 ### Experimental Design
-*Raw experimental data can be found in experiment_results.json.*
+*Raw experimental data can be found in [experiment_results.json](https://github.com/ranadubauskas/AR-Project/blob/main/experiment_results.json)*
 
 The evaluation used a repeated-measures AR target selection experiment comparing Baseline Ray Casting and MagRay. The study included 10 participants, all of whom were Vanderbilt University college students. Each participant completed a run of 72 randomized trials across three density conditions: Low, Medium, and High. In total, the dataset consisted of 720 trials, evenly split between Baseline and MagRay and evenly distributed across density conditions. Trial order was randomized to reduce immediate memory and carryover effects, while matched layoutSeed and targetIndex pairs ensured that the two techniques were evaluated on the same underlying scene layouts and target selections.
 
