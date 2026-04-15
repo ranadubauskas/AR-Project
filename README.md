@@ -1,7 +1,8 @@
 # MagRay: Intent-Aware Selection in Dense AR Scenes
 ## CS 8395 (Augmented Reality) - Rana Dubauskas
 
-Go to [Final Deliverable Section](#final-deliverable)
+- Go to [Final Deliverable Section](#final-deliverable)
+- Go to [MVD Section](#minimum-viable-design-mvd)
 
 ## Project Goal
 
